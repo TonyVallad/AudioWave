@@ -1,0 +1,3 @@
+"""
+AudioWave application package.
+""" 
