@@ -272,6 +272,10 @@ def plot_waterfall(spectrogram: np.ndarray,
     # Convert to dB scale relative to maximum
     spec_norm = spectrogram - np.max(spectrogram)
     
+    # For consistency with the 2D waterfall, we need to transpose the data
+    # so that frequency is on x-axis and time on y-axis
+    spec_norm = np.transpose(spec_norm)
+    
     # Create surface plot with time flowing vertically (y-axis)
     fig.add_trace(
         go.Surface(
@@ -331,9 +335,10 @@ def plot_waterfall_2d(spectrogram: np.ndarray,
     fig = go.Figure()
     
     # Add heatmap with time flowing from bottom to top
+    # For waterfall, we need to transpose the data so frequency is on x-axis and time on y-axis
     fig.add_trace(
         go.Heatmap(
-            z=spectrogram,
+            z=np.transpose(spectrogram),
             x=frequencies,
             y=times,
             colorscale='Viridis',
@@ -351,8 +356,7 @@ def plot_waterfall_2d(spectrogram: np.ndarray,
         template="plotly_white",
         height=500,
         margin=dict(l=20, r=20, t=40, b=20),
-        # Reverse y-axis so time flows from bottom to top
-        yaxis=dict(autorange="reversed")
+        # Time now flows from bottom (0s) to top (end of file)
     )
     
     # Add grid and zoom tools

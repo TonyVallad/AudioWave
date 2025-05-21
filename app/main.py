@@ -754,6 +754,7 @@ def dashboard_tab(audio_data: np.ndarray, sample_rate: int, features: Dict[str, 
     fft_data = features["fft"]
     fft_freqs = fft_data["frequencies"]
     power_db = fft_data["power_db"]
+    magnitudes = fft_data["magnitudes"]
     
     mel_data = features["mel_spec"]
     mel_spec = mel_data["spectrogram"]
@@ -766,26 +767,52 @@ def dashboard_tab(audio_data: np.ndarray, sample_rate: int, features: Dict[str, 
     
     # Left column: Waveform and Spectrum
     with left_col:
-        # Waveform visualization (reduced height)
+        # Waveform visualization
         st.subheader("Waveform")
         waveform_fig = dsp_plots.plot_waveform(audio_data, sample_rate)
         waveform_fig.update_layout(height=250)
         st.plotly_chart(waveform_fig, use_container_width=True)
         
-        # Spectrum visualization
+        # Log-scale Frequency Spectrum visualization
         st.subheader("Frequency Spectrum")
         spectrum_fig = dsp_plots.plot_spectrum(
             fft_freqs[fft_mask], 
             None, 
             power_db[fft_mask], 
-            log_freq=True
+            log_freq=True,
+            title="Audio Spectrum"
         )
         spectrum_fig.update_layout(height=250)
         st.plotly_chart(spectrum_fig, use_container_width=True)
+        
+        # Linear-scale Frequency Spectrum
+        st.subheader("Frequency spectrum")
+        linear_spectrum_fig = dsp_plots.plot_spectrum(
+            fft_freqs[fft_mask], 
+            None, 
+            power_db[fft_mask],
+            log_freq=False,
+            title="Frequency spectrum with linear scale"
+        )
+        linear_spectrum_fig.update_layout(height=250)
+        st.plotly_chart(linear_spectrum_fig, use_container_width=True)
     
-    # Right column: Spectrogram and Waterfall
+    # Right column: Mel Spectrogram, STFT, 2D and 3D Waterfall
     with right_col:
-        # Spectrogram visualization
+        # Additional Visualizations header
+        st.subheader("Additional Visualizations")
+        
+        # Mel Spectrogram
+        mel_fig = dsp_plots.plot_mel_spectrogram(
+            mel_spec,
+            mel_freqs,
+            times,
+            title="Mel Spectrogram"
+        )
+        mel_fig.update_layout(height=250)
+        st.plotly_chart(mel_fig, use_container_width=True)
+        
+        # STFT Spectrogram visualization
         st.subheader("STFT Spectrogram")
         stft_fig = dsp_plots.plot_spectrogram(
             spectrogram[freq_mask, :], 
@@ -800,42 +827,22 @@ def dashboard_tab(audio_data: np.ndarray, sample_rate: int, features: Dict[str, 
         waterfall_2d_fig = dsp_plots.plot_waterfall_2d(
             spectrogram[freq_mask, :],
             frequencies[freq_mask],
-            times
+            times,
+            title="2D Waterfall Plot"
         )
         waterfall_2d_fig.update_layout(height=250)
         st.plotly_chart(waterfall_2d_fig, use_container_width=True)
     
-    # Bottom section with smaller visualizations
-    st.subheader("Additional Visualizations")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Mel Spectrogram
-        mel_fig = dsp_plots.plot_mel_spectrogram(
-            mel_spec,
-            mel_freqs,
-            times
-        )
-        mel_fig.update_layout(height=250, title="Mel Spectrogram")
-        st.plotly_chart(mel_fig, use_container_width=True)
-    
-    with col2:
-        # 3D Waterfall (small version)
-        waterfall_fig = dsp_plots.plot_waterfall(
-            spectrogram[freq_mask, :],
-            frequencies[freq_mask],
-            times
-        )
-        waterfall_fig.update_layout(height=250)
-        st.plotly_chart(waterfall_fig, use_container_width=True)
-    
-    # Add quick links to detailed tabs
-    st.markdown("### Explore Detailed Views")
-    st.markdown(
-        """
-        This dashboard provides an overview of audio analysis. For more details, explore the specific tabs.
-        """
+    # 3D Waterfall visualization - Full width outside of columns
+    st.subheader("Waterfall Plot")
+    waterfall_fig = dsp_plots.plot_waterfall(
+        spectrogram[freq_mask, :],
+        frequencies[freq_mask],
+        times,
+        title="Waterfall Plot"
     )
+    waterfall_fig.update_layout(height=700)
+    st.plotly_chart(waterfall_fig, use_container_width=True)
 
 
 def sample_analysis_tab() -> None:
