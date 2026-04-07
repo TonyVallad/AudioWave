@@ -106,6 +106,7 @@ apply_custom_styling()
 SAMPLE_RATE = 22050  # Default sample rate for processing
 MAX_UPLOAD_SIZE_MB = 50  # Maximum upload file size in MB
 DEFAULT_DURATION = 3.0  # Default recording duration in seconds
+CEPSTRUM_CUTOFF_MS = 250  # Cutoff for cepstrum display in milliseconds
 
 # Audio directory constants
 RECORDINGS_DIR = Path("audio_inputs/recordings")
@@ -655,6 +656,14 @@ def waterfall_tab(audio_data: np.ndarray, sample_rate: int, features: Dict[str, 
     frequencies = stft_data["frequencies"]
     times = stft_data["times"]
     
+    # Initialize the shared frequency value if it doesn't exist
+    if "shared_max_freq" not in st.session_state:
+        st.session_state.shared_max_freq = min(5000, sample_rate // 2)
+    
+    # Function to update the shared max frequency value
+    def update_shared_max_freq():
+        st.session_state.shared_max_freq = st.session_state.waterfall_max_freq
+    
     # Plot controls
     col1, col2 = st.columns(2)
     
@@ -663,9 +672,10 @@ def waterfall_tab(audio_data: np.ndarray, sample_rate: int, features: Dict[str, 
             "Maximum Frequency (Hz):",
             min_value=100,
             max_value=sample_rate // 2,
-            value=min(5000, sample_rate // 2),
+            value=st.session_state.shared_max_freq,
             step=100,
-            key="waterfall_max_freq"
+            key="waterfall_max_freq",
+            on_change=update_shared_max_freq
         )
     
     with col2:
@@ -742,9 +752,6 @@ def dashboard_tab(audio_data: np.ndarray, sample_rate: int, features: Dict[str, 
     with col4:
         st.metric("RMS Level", f"{np.sqrt(np.mean(audio_data**2)):.4f}")
     
-    # Create a two-column layout for the visualizations
-    left_col, right_col = st.columns(2)
-    
     # Get data from features
     stft_data = features["stft"]
     spectrogram = stft_data["spectrogram"]
@@ -760,19 +767,27 @@ def dashboard_tab(audio_data: np.ndarray, sample_rate: int, features: Dict[str, 
     mel_spec = mel_data["spectrogram"]
     mel_freqs = mel_data["frequencies"]
     
-    # Filter for display
-    max_freq = min(5000, sample_rate // 2)
+    # Use the shared max frequency value if available, otherwise use the default
+    if 'shared_max_freq' in st.session_state:
+        max_freq = st.session_state.shared_max_freq
+    else:
+        max_freq = min(5000, sample_rate // 2)
+        st.session_state.shared_max_freq = max_freq
+    
     freq_mask = frequencies <= max_freq
     fft_mask = fft_freqs <= max_freq
     
-    # Left column: Waveform and Spectrum
+    # Waveform visualization at the top, full width
+    st.subheader("Waveform")
+    waveform_fig = dsp_plots.plot_waveform(audio_data, sample_rate)
+    waveform_fig.update_layout(height=250)
+    st.plotly_chart(waveform_fig, use_container_width=True)
+    
+    # Create a two-column layout for the remaining visualizations
+    left_col, right_col = st.columns(2)
+    
+    # Left column: Spectrum visualizations
     with left_col:
-        # Waveform visualization
-        st.subheader("Waveform")
-        waveform_fig = dsp_plots.plot_waveform(audio_data, sample_rate)
-        waveform_fig.update_layout(height=250)
-        st.plotly_chart(waveform_fig, use_container_width=True)
-        
         # Log-scale Frequency Spectrum visualization
         st.subheader("Frequency Spectrum")
         spectrum_fig = dsp_plots.plot_spectrum(
@@ -796,13 +811,41 @@ def dashboard_tab(audio_data: np.ndarray, sample_rate: int, features: Dict[str, 
         )
         linear_spectrum_fig.update_layout(height=250)
         st.plotly_chart(linear_spectrum_fig, use_container_width=True)
-    
-    # Right column: Mel Spectrogram, STFT, 2D and 3D Waterfall
-    with right_col:
-        # Additional Visualizations header
-        st.subheader("Additional Visualizations")
         
+        # Cepstrum visualization
+        st.subheader("Cepstrum")
+        # Calculate cepstrum: inverse FFT of log magnitude spectrum
+        log_magnitude = np.log(np.maximum(magnitudes, 1e-10))  # Avoid log(0)
+        cepstrum = np.fft.ifft(log_magnitude).real
+        quefrency = np.arange(len(cepstrum)) / sample_rate  # Time-like x-axis
+        
+        # Apply cutoff to disregard initial portion (specified in milliseconds)
+        cutoff_samples = int((CEPSTRUM_CUTOFF_MS / 1000) * sample_rate)
+        display_start_idx = cutoff_samples
+        
+        # Create cepstrum plot
+        cepstrum_fig = go.Figure()
+        cepstrum_fig.add_trace(
+            go.Scatter(
+                x=quefrency[display_start_idx:len(quefrency)//2],
+                y=cepstrum[display_start_idx:len(cepstrum)//2],
+                mode='lines',
+                line=dict(width=2, color='orange')
+            )
+        )
+        cepstrum_fig.update_layout(
+            title=f"Cepstrum Analysis (from {CEPSTRUM_CUTOFF_MS} ms)",
+            xaxis_title="Quefrency (s)",
+            yaxis_title="Amplitude",
+            height=250,
+            margin=dict(l=20, r=20, t=40, b=20),
+        )
+        st.plotly_chart(cepstrum_fig, use_container_width=True)
+    
+    # Right column: Mel Spectrogram, STFT, 2D Waterfall
+    with right_col:
         # Mel Spectrogram
+        st.subheader("Mel Spectrogram")
         mel_fig = dsp_plots.plot_mel_spectrogram(
             mel_spec,
             mel_freqs,
@@ -841,7 +884,15 @@ def dashboard_tab(audio_data: np.ndarray, sample_rate: int, features: Dict[str, 
         times,
         title="Waterfall Plot"
     )
-    waterfall_fig.update_layout(height=700)
+    # Set the default camera position to match the preferred view
+    waterfall_fig.update_layout(
+        height=700,
+        scene_camera=dict(
+            eye=dict(x=-1.5, y=-1.5, z=1.0),
+            center=dict(x=0, y=0, z=-0.1),
+            up=dict(x=0, y=0, z=1)
+        )
+    )
     st.plotly_chart(waterfall_fig, use_container_width=True)
 
 
@@ -1116,11 +1167,11 @@ def sidebar_file_browser() -> Optional[str]:
     selected_file_path = None
     
     # Create a dictionary mapping filenames to their full paths
-    # Also include the directory name in the display
     file_options = {}
     for file in audio_files:
         parent_dir = file.parent.name
-        display_name = f"[{parent_dir}] {file.name}"
+        # display_name = f"[{parent_dir}] {file.name}"
+        display_name = f"{file.stem}"  # .stem gets filename without extension
         file_options[display_name] = file
     
     selected_display = st.sidebar.selectbox(
